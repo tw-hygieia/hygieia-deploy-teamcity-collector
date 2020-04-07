@@ -47,7 +47,7 @@ public class TeamcityCollector extends Collector {
                                               List<String> environments) {
         TeamcityCollector protoType = new TeamcityCollector();
         protoType.setName("Teamcity");
-        protoType.setCollectorType(CollectorType.Build);
+        protoType.setCollectorType(CollectorType.Deployment);
         protoType.setOnline(true);
         protoType.setEnabled(true);
         protoType.getBuildServers().addAll(buildServers);
