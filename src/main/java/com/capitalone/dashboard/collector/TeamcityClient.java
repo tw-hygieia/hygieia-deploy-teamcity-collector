@@ -1,35 +1,40 @@
 package com.capitalone.dashboard.collector;
 
-import com.capitalone.dashboard.model.BaseModel;
-import com.capitalone.dashboard.model.Build;
-import com.capitalone.dashboard.model.TeamcityProject;
+import com.capitalone.dashboard.model.Environment;
+import com.capitalone.dashboard.model.EnvironmentComponent;
+import com.capitalone.dashboard.model.EnvironmentStatus;
+import com.capitalone.dashboard.model.TeamcityApplication;
+import com.capitalone.dashboard.model.TeamcityEnvResCompData;
 
-import java.util.Map;
-import java.util.Set;
+import java.util.List;
 
 /**
- * Client for fetching job and build information from Hudson
+ * Client for fetching information from Teamcity.
  */
 public interface TeamcityClient {
 
-    enum jobData {BUILD, CONFIG};
+    /**
+     * Fetches all {@link TeamcityApplication}s for a given instance URL.
+     *
+     * @param instanceUrl instance URL
+     * @return list of {@link TeamcityApplication}s
+     */
+    List<TeamcityApplication> getApplications(String instanceUrl);
 
     /**
-     * Finds all of the configured jobs for a given instance and returns the set of
-     * builds for each job. At a minimum, the number and url of each Build will be
-     * populated.
+     * Fetches all {@link Environment}s for a given {@link TeamcityApplication}.
      *
-     * @param instanceUrl the URL for the Teamcity instance
-     * @return a summary of every build for each job on the instance
+     * @param application a {@link TeamcityApplication}
+     * @return list of {@link Environment}s
      */
-    Map<TeamcityProject, Map<jobData, Set<BaseModel>>> getInstanceProjects(String instanceUrl);
+    List<Environment> getEnvironments(TeamcityApplication application);
 
     /**
-     * Fetch full populated build information for a build.
+     * Fetches all {@link EnvironmentStatus}es for a given {@link TeamcityApplication} and {@link Environment}.
      *
-     * @param buildUrl the url of the build
-     * @param instanceUrl
-     * @return a Build instance or null
+     * @param application a {@link TeamcityApplication}
+     * @param environment an {@link Environment}
+     * @return list of {@link EnvironmentStatus}es
      */
-    Build getBuildDetails(String buildUrl, String instanceUrl);
+    List<TeamcityEnvResCompData> getEnvironmentResourceStatusData(TeamcityApplication application, Environment environment);
 }
