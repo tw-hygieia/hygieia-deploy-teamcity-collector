@@ -214,6 +214,7 @@ public class TeamcityCollectorTask extends CollectorTask<TeamcityCollector> {
             long startApp = System.currentTimeMillis();
             for (Environment environment : teamcityClient
                     .getEnvironments(application)) {
+                environment.setName(environment.getName().replace(".","_"));
                 List<TeamcityEnvResCompData> combinedDataList = teamcityClient
                         .getEnvironmentResourceStatusData(application,
                                 environment);

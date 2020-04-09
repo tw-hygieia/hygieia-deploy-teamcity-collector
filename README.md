@@ -89,12 +89,12 @@ teamcity.servers[0]=http://teamcity.company.com
 
 # If using username/token for API authentication
 # (required for Cloudbees Teamcity Ops Center) For example,
-teamcity.servers[1]=http://username:token@teamcity.company.com
+teamcity.servers[1]=http://teamcity.company.com
 
 # Another option: If using same username/password Teamcity auth,
 # set username/apiKey to use HTTP Basic Auth (blank=no auth)
-teamcity.usernames[0]=
-teamcity.apiKeys[0]=
+teamcity.usernames[0]=username
+teamcity.apiKeys[0]=apikey / password
 
 # Determines if build console log is collected - defaults to false
 teamcity.saveLog=true
