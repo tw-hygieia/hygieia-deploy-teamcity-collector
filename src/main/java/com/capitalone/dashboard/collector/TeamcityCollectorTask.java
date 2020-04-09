@@ -112,7 +112,6 @@ public class TeamcityCollectorTask extends CollectorTask<TeamcityCollector> {
 
             addNewApplications(teamcityClient.getApplications(instanceUrl),
                     collector);
-            log("enabledApplications(collector, instanceUrl), COLLECTOR_ID, INSTANCE_URL" + enabledApplications(collector, instanceUrl) + collector.getId() + instanceUrl);
             updateData(enabledApplications(collector, instanceUrl));
 
             log("Finished", start);

@@ -17,7 +17,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestOperations;
 
 import java.net.URI;
@@ -50,58 +49,9 @@ public class DefaultTeamcityClient implements TeamcityClient {
         LOGGER.debug("Enter getApplications");
         List<TeamcityApplication> applications = new ArrayList<>();
         for (String projectID : settings.getProjectIds()) {
-            try {
-                String url = joinURL(instanceUrl, new String[]{PROJECT_API_URL_SUFFIX + "/id:" + projectID});
-                ResponseEntity<String> responseEntity = makeRestCall(url);
-                if (responseEntity == null) {
-                    break;
-                }
-                String returnJSON = responseEntity.getBody();
-                if (StringUtils.isEmpty(returnJSON)) {
-                    break;
-                }
-                JSONParser parser = new JSONParser();
-                try {
-                    JSONObject object = (JSONObject) parser.parse(returnJSON);
-                    JSONObject subProjectsObject = (JSONObject) object.get("projects");
-                    JSONArray subProjects = getJsonArray(subProjectsObject, "project");
-                    JSONObject buildTypesObject = (JSONObject) object.get("buildTypes");
-                    JSONArray buildTypes = getJsonArray(buildTypesObject, "buildType");
-                    if (subProjects.size() == 0 && buildTypes.size() == 0) {
-                        break;
-                    }
-                    if (subProjects.size() > 0) {
-                        for (Object subProject : subProjects) {
-                            JSONObject jsonSubProject = (JSONObject) subProject;
-                            final String subProjectID = getString(jsonSubProject, "id");
-                            url = joinURL(instanceUrl, new String[]{PROJECT_API_URL_SUFFIX + "/id:" + subProjectID});
-                            responseEntity = makeRestCall(url);
-                            if (responseEntity == null) {
-                                break;
-                            }
-                            returnJSON = responseEntity.getBody();
-                            if (StringUtils.isEmpty(returnJSON)) {
-                                break;
-                            }
-                            parser = new JSONParser();
-                            object = (JSONObject) parser.parse(returnJSON);
-                            buildTypesObject = (JSONObject) object.get("buildTypes");
-                            buildTypes = getJsonArray(buildTypesObject, "buildType");
-                            constructApplication(applications, buildTypes, projectID, instanceUrl);
-                        }
-                    } else {
-                        constructApplication(applications, buildTypes, projectID, instanceUrl);
-                    }
-
-                } catch (ParseException e) {
-                    LOGGER.error("Parsing jobs details on instance: " + instanceUrl, e);
-                }
-            } catch (RestClientException rce) {
-                LOGGER.error("client exception loading jobs details", rce);
-                throw rce;
-            } catch (URISyntaxException e1) {
-                LOGGER.error("wrong syntax url for loading jobs details", e1);
-            }
+            JSONArray buildTypes = new JSONArray();
+            recursivelyFindBuildTypes(instanceUrl, projectID, buildTypes);
+            constructApplication(applications, buildTypes, projectID, instanceUrl);
         }
         return applications;
     }
@@ -161,61 +111,48 @@ public class DefaultTeamcityClient implements TeamcityClient {
         return false;
     }
 
-    @Override
-    public List<Environment> getEnvironments(TeamcityApplication application) {
-        List<Environment> environments = new ArrayList<>();
+    private void recursivelyFindBuildTypes(String instanceUrl, String projectID, JSONArray buildTypes) {
         try {
-            String url = joinURL(application.getInstanceUrl(), new String[]{PROJECT_API_URL_SUFFIX + "/id:" + application.getApplicationId()});
+            String url = joinURL(instanceUrl, new String[]{PROJECT_API_URL_SUFFIX + "/id:" + projectID});
+            LOGGER.info("Fetching project details for {}", url);
             ResponseEntity<String> responseEntity = makeRestCall(url);
             if (responseEntity == null) {
-                return Collections.emptyList();
+                return;
             }
             String returnJSON = responseEntity.getBody();
             if (StringUtils.isEmpty(returnJSON)) {
-                return Collections.emptyList();
+                return;
             }
             JSONParser parser = new JSONParser();
-            try {
-                JSONObject object = (JSONObject) parser.parse(returnJSON);
-                JSONObject subProjectsObject = (JSONObject) object.get("projects");
-                JSONArray subProjects = getJsonArray(subProjectsObject, "project");
-                JSONObject buildTypesObject = (JSONObject) object.get("buildTypes");
-                JSONArray buildTypes = getJsonArray(buildTypesObject, "buildType");
-                if (subProjects.size() == 0 && buildTypes.size() == 0) {
-                    return Collections.emptyList();
-                }
-                if (subProjects.size() > 0) {
-                    for (Object subProject : subProjects) {
-                        JSONObject jsonSubProject = (JSONObject) subProject;
-                        final String subProjectID = getString(jsonSubProject, "id");
-                        url = joinURL(application.getInstanceUrl(), new String[]{PROJECT_API_URL_SUFFIX + "/id:" + subProjectID});
-                        responseEntity = makeRestCall(url);
-                        if (responseEntity == null) {
-                            break;
-                        }
-                        returnJSON = responseEntity.getBody();
-                        if (StringUtils.isEmpty(returnJSON)) {
-                            break;
-                        }
-                        parser = new JSONParser();
-                        object = (JSONObject) parser.parse(returnJSON);
-                        buildTypesObject = (JSONObject) object.get("buildTypes");
-                        buildTypes = getJsonArray(buildTypesObject, "buildType");
-                        constructEnvironment(environments, application, buildTypes);
-                    }
-                } else {
-                    constructEnvironment(environments, application, buildTypes);
-                }
-            } catch (ParseException e) {
-                LOGGER.error("Parsing jobs details on instance: " + application.getInstanceUrl(), e);
+            JSONObject object = (JSONObject) parser.parse(returnJSON);
+            JSONObject subProjectsObject = (JSONObject) object.get("projects");
+            JSONArray subProjects = getJsonArray(subProjectsObject, "project");
+            JSONObject buildTypesObject = (JSONObject) object.get("buildTypes");
+            JSONArray buildType = getJsonArray(buildTypesObject, "buildType");
+            if (subProjects.size() == 0 && buildType.size() == 0) {
+                return;
             }
-        } catch (RestClientException rce) {
-            LOGGER.error("client exception loading jobs details", rce);
-            throw rce;
-        } catch (URISyntaxException e1) {
-            LOGGER.error("wrong syntax url for loading jobs details", e1);
+            buildTypes.addAll(buildType);
+            if (subProjects.size() > 0) {
+                for (Object subProject : subProjects) {
+                    JSONObject jsonSubProject = (JSONObject) subProject;
+                    final String subProjectID = getString(jsonSubProject, "id");
+                    recursivelyFindBuildTypes(instanceUrl, subProjectID, buildTypes);
+                }
+            }
+        } catch (URISyntaxException e) {
+            LOGGER.error("wrong syntax url for loading jobs details", e);
+        } catch (ParseException e) {
+            LOGGER.error("Parsing jobs details on instance: " + instanceUrl, e);
         }
+    }
 
+    @Override
+    public List<Environment> getEnvironments(TeamcityApplication application) {
+        List<Environment> environments = new ArrayList<>();
+        JSONArray buildTypes = new JSONArray();
+        recursivelyFindBuildTypes(application.getInstanceUrl(), application.getApplicationId(), buildTypes);
+        constructEnvironment(environments, application, buildTypes);
         return environments;
     }
 
