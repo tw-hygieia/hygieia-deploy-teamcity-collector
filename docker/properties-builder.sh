@@ -71,8 +71,15 @@ dbpassword=${HYGIEIA_API_ENV_SPRING_DATA_MONGODB_PASSWORD:-dbpassword}
 teamcity.cron=${TEAMCITY_CRON:-0 0/5 * * * *}
 #A comma seperated list of teamcity projectids
 teamcity.projectIds=${TEAMCITY_DEPLOYMENT_PROJECT_IDS}
+
 # The folder depth - default is 10
 teamcity.folderDepth=${TEAMCITY_FOLDER_DEPTH:-10}
+
+#64-bit encoded credentials with the pattern username:password
+#on a mac you can create them with -> echo -n 'username:password' | base64
+#reference:  https://www.base64decode.org/
+teamcity.credentials=${TEAMCITY_CREDENTIALS}
+
 #Teamcity server (required) - Can provide multiple
 teamcity.servers[0]=${TEAMCITY_SERVER}
 #teamcity.niceNames[0]=[YourTeamcity]

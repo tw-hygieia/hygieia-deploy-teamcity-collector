@@ -20,6 +20,7 @@ public class TeamcitySettings {
     private List<String> servers = new ArrayList<>();
     private List<String> niceNames = new ArrayList<>();
     private String projectIds = "";
+    private String credentials;
 
     public String getCron() {
         return cron;
@@ -77,4 +78,11 @@ public class TeamcitySettings {
         return Arrays.asList(projectIds.split(","));
     }
 
+    public String getCredentials() {
+        return credentials;
+    }
+
+    public void setCredentials(String credentials) {
+        this.credentials = credentials;
+    }
 }

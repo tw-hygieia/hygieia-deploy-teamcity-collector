@@ -1,5 +1,6 @@
 package com.capitalone.dashboard.collector;
 
+import com.capitalone.dashboard.misc.HygieiaException;
 import com.capitalone.dashboard.model.*;
 import com.capitalone.dashboard.util.Supplier;
 import org.apache.commons.codec.binary.Base64;
@@ -31,11 +32,11 @@ public class DefaultTeamcityClient implements TeamcityClient {
     private final TeamcitySettings settings;
     private final RestOperations rest;
 
-    private static final String PROJECT_API_URL_SUFFIX = "app/rest/projects";
+    private static final String PROJECT_API_URL_SUFFIX = "httpAuth/app/rest/projects";
 
-    private static final String BUILD_DETAILS_URL_SUFFIX = "app/rest/builds";
+    private static final String BUILD_DETAILS_URL_SUFFIX = "httpAuth/app/rest/builds";
 
-    private static final String BUILD_TYPE_DETAILS_URL_SUFFIX = "app/rest/buildTypes";
+    private static final String BUILD_TYPE_DETAILS_URL_SUFFIX = "httpAuth/app/rest/buildTypes";
 
     @Autowired
     public DefaultTeamcityClient(TeamcitySettings teamcitySettings,
@@ -105,7 +106,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 String propertyValue = jsonProperty.get("value").toString();
                 return propertyValue.equals("DEPLOYMENT");
             }
-        } catch (HttpClientErrorException hce) {
+        } catch (HttpClientErrorException | HygieiaException hce) {
             LOGGER.error("http client exception loading build details", hce);
         }
         return false;
@@ -140,10 +141,10 @@ public class DefaultTeamcityClient implements TeamcityClient {
                     recursivelyFindBuildTypes(instanceUrl, subProjectID, buildTypes);
                 }
             }
-        } catch (URISyntaxException e) {
-            LOGGER.error("wrong syntax url for loading jobs details", e);
         } catch (ParseException e) {
             LOGGER.error("Parsing jobs details on instance: " + instanceUrl, e);
+        } catch (HygieiaException e) {
+            LOGGER.error("Error in calling Teamcity API", e);
         }
     }
 
@@ -182,6 +183,8 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 LOGGER.error("wrong syntax url for loading jobs details", e);
             } catch (ParseException e) {
                 LOGGER.error("Parsing jobs details on instance: " + application.getInstanceUrl(), e);
+            } catch (HygieiaException e) {
+                LOGGER.error("Error in calling Teamcity API", e);
             }
         }
     }
@@ -226,7 +229,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 deployData.setResourceName("teamcity-runner");
                 environmentStatuses.add(deployData);
             }
-        } catch (HttpClientErrorException hce) {
+        } catch (HttpClientErrorException | HygieiaException hce) {
             LOGGER.error("http client exception loading build details", hce);
         }
         return environmentStatuses;
@@ -263,64 +266,30 @@ public class DefaultTeamcityClient implements TeamcityClient {
         return allComponents;
     }
 
-
     @SuppressWarnings("PMD")
-    protected ResponseEntity<String> makeRestCall(String sUrl) throws URISyntaxException {
+    protected ResponseEntity<String> makeRestCall(String sUrl) throws HygieiaException {
         LOGGER.debug("Enter makeRestCall " + sUrl);
-        URI thisuri = URI.create(sUrl);
-        String userInfo = thisuri.getUserInfo();
-
-        //get userinfo from URI or settings (in spring properties)
-        if (StringUtils.isEmpty(userInfo)) {
-            List<String> servers = this.settings.getServers();
-            List<String> usernames = this.settings.getUsernames();
-            List<String> apiKeys = this.settings.getApiKeys();
-            if (org.apache.commons.collections.CollectionUtils.isNotEmpty(servers) && org.apache.commons.collections.CollectionUtils.isNotEmpty(usernames) && org.apache.commons.collections.CollectionUtils.isNotEmpty(apiKeys)) {
-                boolean exactMatchFound = false;
-                for (int i = 0; i < servers.size(); i++) {
-                    if ((servers.get(i) != null)) {
-                        String domain1 = getDomain(sUrl);
-                        String domain2 = getDomain(servers.get(i));
-                        if (StringUtils.isNotEmpty(domain1) && StringUtils.isNotEmpty(domain2) && Objects.equals(domain1, domain2)
-                                && getPort(sUrl) == getPort(servers.get(i))) {
-                            exactMatchFound = true;
-                        }
-                        if (exactMatchFound && (i < usernames.size()) && (i < apiKeys.size())
-                                && (StringUtils.isNotEmpty(usernames.get(i))) && (StringUtils.isNotEmpty(apiKeys.get(i)))) {
-                            userInfo = usernames.get(i) + ":" + apiKeys.get(i);
-                        }
-                        if (exactMatchFound) {
-                            break;
-                        }
-                    }
-                }
-                if (!exactMatchFound) {
-                    LOGGER.warn("Credentials for the following url was not found. This could happen if the domain/subdomain/IP address "
-                            + "in the build url returned by Teamcity and the Teamcity instance url in your Hygieia configuration do not match: "
-                            + "\"" + sUrl + "\"");
-                }
-            }
-        }
-        // Basic Auth only.
-        if (StringUtils.isNotEmpty(userInfo)) {
-            return rest.exchange(thisuri, HttpMethod.GET,
-                    new HttpEntity<>(createHeaders(userInfo)),
-                    String.class);
+        String teamcityAccess = settings.getCredentials();
+        if (StringUtils.isEmpty(teamcityAccess)) {
+            return rest.exchange(sUrl, HttpMethod.GET, null, String.class);
         } else {
-            return rest.exchange(thisuri, HttpMethod.GET, null,
-                    String.class);
+            String teamcityAccessBase64 = new String(Base64.decodeBase64(teamcityAccess));
+            String[] parts = teamcityAccessBase64.split(":");
+            if (parts.length != 2) {
+                throw new HygieiaException("Invalid Teamcity credentials", HygieiaException.INVALID_CONFIGURATION);
+            }
+            return rest.exchange(sUrl, HttpMethod.GET, new HttpEntity<>(createHeaders(parts[0], parts[1])), String.class);
         }
-
     }
 
-    private String getDomain(String url) throws URISyntaxException {
-        URI uri = new URI(url);
-        return uri.getHost();
-    }
+    private static HttpHeaders createHeaders(final String userId, final String password) {
+        String auth = userId + ':' + password;
+        byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(StandardCharsets.US_ASCII));
+        String authHeader = "Basic " + new String(encodedAuth);
 
-    private int getPort(String url) throws URISyntaxException {
-        URI uri = new URI(url);
-        return uri.getPort();
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.AUTHORIZATION, authHeader);
+        return headers;
     }
 
     private JSONArray getJsonArray(JSONObject json, String key) {
@@ -330,16 +299,6 @@ public class DefaultTeamcityClient implements TeamcityClient {
 
     private String getString(JSONObject json, String key) {
         return (String) json.get(key);
-    }
-
-    protected HttpHeaders createHeaders(final String userInfo) {
-        byte[] encodedAuth = Base64.encodeBase64(
-                userInfo.getBytes(StandardCharsets.US_ASCII));
-        String authHeader = "Basic " + new String(encodedAuth);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(HttpHeaders.AUTHORIZATION, authHeader);
-        return headers;
     }
 
     private String str(JSONObject json, String key) {
