@@ -5,6 +5,9 @@ import com.capitalone.dashboard.model.*;
 import com.capitalone.dashboard.util.Supplier;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
+import org.joda.time.DateTime;
+import org.joda.time.format.DateTimeFormat;
+import org.joda.time.format.DateTimeFormatter;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -23,6 +26,10 @@ import org.springframework.web.client.RestOperations;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 
 @Component
@@ -212,9 +219,19 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 // A basic Build object. This will be fleshed out later if this is a new Build.
                 String buildID = jsonBuild.get("id").toString();
                 LOGGER.debug(" buildNumber: " + buildID);
-
-
-                if (!isDeployed(jsonBuild.get("status").toString())) continue;
+                String buildURL = String.format("%s/id:%s", allBuildsUrl, buildID);
+                responseEntity = makeRestCall(buildURL);
+                returnJSON = responseEntity.getBody();
+                if (StringUtils.isEmpty(returnJSON)) {
+                    return Collections.emptyList();
+                }
+                parser = new JSONParser();
+                JSONObject buildJson = (JSONObject) parser.parse(returnJSON);
+                if (!isDeployed(buildJson.get("status").toString())) continue;
+                JSONObject triggeredObject = (JSONObject) buildJson.get("triggered");
+                String dateInString = triggeredObject.get("date").toString();
+                SimpleDateFormat df = new SimpleDateFormat("yyyyMMdd'T'HHmmss+0530");
+                Date date = df.parse(dateInString);
 
                 TeamcityEnvResCompData deployData = new TeamcityEnvResCompData();
 
@@ -224,12 +241,12 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 deployData.setComponentID(buildID);
                 deployData.setComponentName(application.getApplicationName());
                 deployData.setDeployed(true);
-                deployData.setAsOfDate(System.currentTimeMillis());
+                deployData.setAsOfDate(date.getTime());
                 deployData.setOnline(true);
                 deployData.setResourceName("teamcity-runner");
                 environmentStatuses.add(deployData);
             }
-        } catch (HttpClientErrorException | HygieiaException hce) {
+        } catch (HttpClientErrorException | HygieiaException | java.text.ParseException hce) {
             LOGGER.error("http client exception loading build details", hce);
         }
         return environmentStatuses;
