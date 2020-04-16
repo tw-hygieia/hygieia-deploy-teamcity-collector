@@ -230,7 +230,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 if (!isDeployed(buildJson.get("status").toString())) continue;
                 JSONObject triggeredObject = (JSONObject) buildJson.get("triggered");
                 String dateInString = triggeredObject.get("date").toString();
-                SimpleDateFormat df = new SimpleDateFormat("yyyyMMdd'T'HHmmss+0530");
+                SimpleDateFormat df = new SimpleDateFormat("yyyyMMdd'T'HHmmss-0400");
                 Date date = df.parse(dateInString);
 
                 TeamcityEnvResCompData deployData = new TeamcityEnvResCompData();
