@@ -1,13 +1,12 @@
 package com.capitalone.dashboard.collector;
 
 import com.capitalone.dashboard.misc.HygieiaException;
-import com.capitalone.dashboard.model.*;
+import com.capitalone.dashboard.model.Environment;
+import com.capitalone.dashboard.model.TeamcityApplication;
+import com.capitalone.dashboard.model.TeamcityEnvResCompData;
 import com.capitalone.dashboard.util.Supplier;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
-import org.joda.time.DateTime;
-import org.joda.time.format.DateTimeFormat;
-import org.joda.time.format.DateTimeFormatter;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -23,13 +22,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestOperations;
 
-import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
-import java.text.SimpleDateFormat;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Component
@@ -230,8 +227,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 if (!isDeployed(buildJson.get("status").toString())) continue;
                 JSONObject triggeredObject = (JSONObject) buildJson.get("triggered");
                 String dateInString = triggeredObject.get("date").toString();
-                SimpleDateFormat df = new SimpleDateFormat("yyyyMMdd'T'HHmmss-0400");
-                Date date = df.parse(dateInString);
+                Long time = getTimeInMillis(dateInString);
 
                 TeamcityEnvResCompData deployData = new TeamcityEnvResCompData();
 
@@ -241,16 +237,26 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 deployData.setComponentID(buildID);
                 deployData.setComponentName(application.getApplicationName());
                 deployData.setDeployed(true);
-                deployData.setAsOfDate(date.getTime());
+                deployData.setAsOfDate(time);
                 deployData.setOnline(true);
                 deployData.setResourceName("teamcity-runner");
                 environmentStatuses.add(deployData);
             }
-        } catch (HttpClientErrorException | HygieiaException | java.text.ParseException hce) {
+        } catch (HttpClientErrorException | HygieiaException hce) {
             LOGGER.error("http client exception loading build details", hce);
         }
         return environmentStatuses;
 
+    }
+
+    private long getTimeInMillis(String startDate) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss");
+        String dateWithoutOffset = startDate.substring(0, 15);
+        String offset = startDate.substring(15);
+        LocalDateTime formattedDateTime = LocalDateTime.parse(dateWithoutOffset, formatter);
+        String formattedOffset = offset.substring(0, 3) + ":" + offset.substring(3);
+        ZoneOffset zoneOffset = ZoneOffset.of(formattedOffset);
+        return formattedDateTime.atOffset(zoneOffset).toEpochSecond() * 1000;
     }
 
     private boolean isDeployed(String deployStatus) {
