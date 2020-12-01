@@ -1,12 +1,14 @@
 package com.capitalone.dashboard.collector;
 
 import com.capitalone.dashboard.misc.HygieiaException;
-import com.capitalone.dashboard.model.Environment;
-import com.capitalone.dashboard.model.TeamcityApplication;
-import com.capitalone.dashboard.model.TeamcityEnvResCompData;
+import com.capitalone.dashboard.model.*;
+import com.capitalone.dashboard.repository.CommitRepository;
 import com.capitalone.dashboard.util.Supplier;
+import com.mongodb.util.JSON;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.joda.time.DateTime;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -14,39 +16,48 @@ import org.json.simple.parser.ParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestOperations;
 
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-
 @Component
 public class DefaultTeamcityClient implements TeamcityClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultTeamcityClient.class);
 
     private final TeamcitySettings settings;
     private final RestOperations rest;
+    private final CommitRepository commitRepository;
+    private final PipelineCommitProcessor pipelineCommitProcessor;
 
-    private static final String PROJECT_API_URL_SUFFIX = "httpAuth/app/rest/projects";
 
-    private static final String BUILD_DETAILS_URL_SUFFIX = "httpAuth/app/rest/builds";
+    private static final String PROJECT_API_URL_SUFFIX = "app/rest/projects";
 
-    private static final String BUILD_TYPE_DETAILS_URL_SUFFIX = "httpAuth/app/rest/buildTypes";
+    private static final String BUILD_DETAILS_URL_SUFFIX = "app/rest/builds";
+
+    private static final String BUILD_TYPE_DETAILS_URL_SUFFIX = "app/rest/buildTypes";
+
+
 
     @Autowired
     public DefaultTeamcityClient(TeamcitySettings teamcitySettings,
-                                 Supplier<RestOperations> restOperationsSupplier) {
+                                 Supplier<RestOperations> restOperationsSupplier,
+                                 CommitRepository commitRepository,
+                                 PipelineCommitProcessor pipelineCommitProcessor) {
         this.settings = teamcitySettings;
         this.rest = restOperationsSupplier.get();
+        this.commitRepository = commitRepository;
+        this.pipelineCommitProcessor = pipelineCommitProcessor;
+
     }
 
     @Override
@@ -210,6 +221,9 @@ public class DefaultTeamcityClient implements TeamcityClient {
             if (object.isEmpty()) {
                 return Collections.emptyList();
             }
+
+
+            List<PipelineCommit> allPipelineCommits = new ArrayList<>();
             JSONArray jsonBuilds = getJsonArray(object, "build");
             for (Object build : jsonBuilds) {
                 JSONObject jsonBuild = (JSONObject) build;
@@ -241,14 +255,142 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 deployData.setOnline(true);
                 deployData.setResourceName("teamcity-runner");
                 environmentStatuses.add(deployData);
+
+                long deployTimeToConsider = getTime(jsonBuild, "finished_at");
+//TODO
+//                PipelineCommit pipelineCommit = getPipelineCommit(application, buildJson, new JSONObject(),
+//                        time == 0 ? getTime(jsonBuild, "created_at") : time);
+//                if (pipelineCommit == null) {
+//                    continue;
+//                }
+//
+//                //If commit doesn't exist, add it
+//                if (allPipelineCommits.stream().noneMatch(pc -> pc.getScmRevisionNumber().equalsIgnoreCase(pipelineCommit.getScmRevisionNumber()))) {
+//                    allPipelineCommits.add(pipelineCommit);
+//                } else {
+//                    //If the incoming pipelineCommit has a smaller timestamp, remove the original one and add the incoming one
+//                    Optional<PipelineCommit> existingPipelineCommit = allPipelineCommits.stream().filter(pc ->
+//                            pc.getScmRevisionNumber().equalsIgnoreCase(pipelineCommit.getScmRevisionNumber()) &&
+//                                    pc.getTimestamp() > pipelineCommit.getTimestamp()).findFirst();
+//                    if (existingPipelineCommit.isPresent()) {
+//                        PipelineCommit existingPc = existingPipelineCommit.get();
+//                        LOGGER.info("Replacing timestamp {} with {} for commit {}", existingPc.getTimestamp(),
+//                                pipelineCommit.getTimestamp(),
+//                                existingPc.getScmRevisionNumber());
+//                        allPipelineCommits.remove(existingPc);
+//                        allPipelineCommits.add(pipelineCommit);
+//                    }
+//                }
+//                allPipelineCommits.add(pipelineCommit);
             }
+//            pipelineCommitProcessor.processPipelineCommits(allPipelineCommits,
+//                    application);
         } catch (HttpClientErrorException | HygieiaException hce) {
             LOGGER.error("http client exception loading build details", hce);
         }
+
         return environmentStatuses;
 
     }
 
+    private PipelineCommit getPipelineCommit(TeamcityApplication application, JSONObject deployableObject, JSONObject environmentObject, long timestamp) throws ParseException {
+        application.setEnvironment(str(environmentObject, "name"));
+        JSONArray lastChanges = (JSONArray) ((JSONObject) deployableObject.get("lastChanges")).get("change");
+        JSONObject commitsObject = (JSONObject) lastChanges.stream().findFirst().orElse(new JSONObject());
+
+        String lastCommitID = (String) commitsObject.get("version");
+        List<Commit> matchedCommits = commitRepository.findByScmRevisionNumber(lastCommitID);
+        Commit newCommit;
+        if (matchedCommits != null && matchedCommits.size() > 0) {
+            newCommit = matchedCommits.get(0);
+        } else {
+            newCommit = getCommit(((Long)commitsObject.get("id")).toString(), application.getInstanceUrl(), application.getApplicationId());
+        }
+        if (newCommit == null) {
+            return null;
+        }
+        return new PipelineCommit(newCommit, timestamp);
+    }
+
+
+    private Commit getCommit(String commitId, String instanceUrl, String applicationId) throws ParseException {
+
+        String url = joinURL(instanceUrl, new String[]{"app/rest/changes", String.format("id:%s", commitId)});
+        final String apiKey = settings.getProjectKey(applicationId);
+        TeamcityCommit teamcityCommit = makeCommitRestCall(url, apiKey);
+        CommitType commitType = CommitType.New; // CommitType.merge
+
+//        TeamcityCommit teamcityCommit = response.getBody();
+        if (teamcityCommit == null) {
+            return null;
+        }
+        try {
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMddThhmmss");
+            Date parsedDate = dateFormat.parse(teamcityCommit.getCreatedAt());
+            java.sql.Timestamp timestamp = new java.sql.Timestamp(parsedDate.getTime());
+            return null;
+         //TODO  return getCommit(teamcityCommit, timestamp, commitType);
+
+        } catch(Exception e) { //this generic but you can control another types of exception
+            // look the origin of excption
+            return null;
+        }
+
+    }
+
+
+    private Commit getCommit(TeamcityCommit teamcityCommit, long timestamp, CommitType commitType) {
+        Commit commit = new Commit();
+        commit.setTimestamp(System.currentTimeMillis());
+//        commit.setScmUrl(repo_url);
+//        commit.setScmBranch(teamcityCommit.getLastPipeline().getRef());
+        commit.setScmRevisionNumber(teamcityCommit.getId());
+        commit.setScmAuthor(teamcityCommit.getAuthorName());
+        commit.setScmCommitLog(teamcityCommit.getMessage());
+        commit.setScmCommitTimestamp(timestamp);
+        commit.setNumberOfChanges(1);
+//        commit.setScmParentRevisionNumbers(teamcityCommit.getParentIds());
+        commit.setType(commitType);
+        return commit;
+    }
+
+    private TeamcityCommit makeCommitRestCall(String url, String apiKey) throws ParseException {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Authorization", "Bearer " + apiKey);
+        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+
+        HttpEntity<String> entity = new HttpEntity<>("body", headers);
+
+
+
+        ResponseEntity<String> jsonString = rest.exchange(url, HttpMethod.GET,
+                entity, String.class);
+
+        JSONParser parser = new JSONParser();
+        JSONObject buildJson = (JSONObject) parser.parse(jsonString.getBody());
+
+        TeamcityCommit commit = new TeamcityCommit();
+        commit.setAuthorName((String) buildJson.get("username"));
+        commit.setCommittedDate((String)buildJson.get("date"));
+        commit.setCreatedAt((String)buildJson.get("date"));
+        commit.setId((String)buildJson.get("version"));
+        commit.setMessage((String)buildJson.get("comment"));
+        commit.setTitle((String)buildJson.get("message"));
+        return commit;
+
+    }
+
+    private long getTime(JSONObject buildJson, String jsonField) {
+
+        String dateToConsider = getString(buildJson, jsonField);
+        if (dateToConsider != null) {
+            return Instant.from(DateTimeFormatter
+                    .ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSz")
+                    .parse(getString(buildJson, jsonField))).toEpochMilli();
+        } else {
+            return 0L;
+        }
+    }
     private long getTimeInMillis(String startDate) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss");
         String dateWithoutOffset = startDate.substring(0, 15);
@@ -294,7 +436,14 @@ public class DefaultTeamcityClient implements TeamcityClient {
         LOGGER.debug("Enter makeRestCall " + sUrl);
         String teamcityAccess = settings.getCredentials();
         if (StringUtils.isEmpty(teamcityAccess)) {
-            return rest.exchange(sUrl, HttpMethod.GET, null, String.class);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + settings.getApiKeys().stream().findFirst().orElse(""));
+            headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+            HttpEntity<String> entity = new HttpEntity<>("body", headers);
+
+
+            return rest.exchange(sUrl, HttpMethod.GET, entity, String.class);
         } else {
             String teamcityAccessBase64 = new String(Base64.decodeBase64(teamcityAccess));
             String[] parts = teamcityAccessBase64.split(":");

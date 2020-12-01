@@ -1,8 +1,11 @@
 package com.capitalone.dashboard;
 
+import com.capitalone.dashboard.event.EnvironmentComponentEventListener;
 import org.apache.http.conn.ssl.NoopHostnameVerifier;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 
 import javax.net.ssl.HttpsURLConnection;
 

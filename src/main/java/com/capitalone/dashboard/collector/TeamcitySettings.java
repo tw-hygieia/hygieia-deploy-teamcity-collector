@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.IntStream;
 
 /**
  * Bean to hold settings specific to the Teamcity collector.
@@ -85,4 +86,13 @@ public class TeamcitySettings {
     public void setCredentials(String credentials) {
         this.credentials = credentials;
     }
+
+    public String getProjectKey(String projectId) {
+        return IntStream.range(0, getProjectIds().size())
+                .filter(index -> projectId.equals(getProjectIds().get(index)))
+                .mapToObj(index -> getApiKeys().get(index))
+                .findFirst()
+                .orElse("");
+    }
+
 }
