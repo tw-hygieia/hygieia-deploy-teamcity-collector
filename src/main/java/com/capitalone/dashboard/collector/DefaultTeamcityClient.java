@@ -110,7 +110,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 String propertyValue = jsonProperty.get("value").toString();
                 return propertyValue.equals("DEPLOYMENT");
             }
-        } catch (HttpClientErrorException | HygieiaException hce) {
+        } catch (HttpClientErrorException hce) {
             LOGGER.error("http client exception loading build details", hce);
         }
         return false;
@@ -147,8 +147,6 @@ public class DefaultTeamcityClient implements TeamcityClient {
             }
         } catch (ParseException e) {
             LOGGER.error("Parsing jobs details on instance: " + instanceUrl, e);
-        } catch (HygieiaException e) {
-            LOGGER.error("Error in calling Teamcity API", e);
         }
     }
 
@@ -187,8 +185,6 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 LOGGER.error("wrong syntax url for loading jobs details", e);
             } catch (ParseException e) {
                 LOGGER.error("Parsing jobs details on instance: " + application.getInstanceUrl(), e);
-            } catch (HygieiaException e) {
-                LOGGER.error("Error in calling Teamcity API", e);
             }
         }
     }
@@ -242,7 +238,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 deployData.setResourceName("teamcity-runner");
                 environmentStatuses.add(deployData);
             }
-        } catch (HttpClientErrorException | HygieiaException hce) {
+        } catch (HttpClientErrorException hce) {
             LOGGER.error("http client exception loading build details", hce);
         }
         return environmentStatuses;
@@ -290,25 +286,19 @@ public class DefaultTeamcityClient implements TeamcityClient {
     }
 
     @SuppressWarnings("PMD")
-    protected ResponseEntity<String> makeRestCall(String sUrl) throws HygieiaException {
+    protected ResponseEntity<String> makeRestCall(String sUrl) {
         LOGGER.debug("Enter makeRestCall " + sUrl);
-        String teamcityAccess = settings.getCredentials();
-        if (StringUtils.isEmpty(teamcityAccess)) {
+        List<String> apiKeys = settings.getApiKeys();
+        if (apiKeys.isEmpty()) {
             return rest.exchange(sUrl, HttpMethod.GET, null, String.class);
         } else {
-            String teamcityAccessBase64 = new String(Base64.decodeBase64(teamcityAccess));
-            String[] parts = teamcityAccessBase64.split(":");
-            if (parts.length != 2) {
-                throw new HygieiaException("Invalid Teamcity credentials", HygieiaException.INVALID_CONFIGURATION);
-            }
-            return rest.exchange(sUrl, HttpMethod.GET, new HttpEntity<>(createHeaders(parts[0], parts[1])), String.class);
+            //TODO apiKeys need not be an array
+            return rest.exchange(sUrl, HttpMethod.GET, new HttpEntity<>(createAuthzHeader(apiKeys.get(0))), String.class);
         }
     }
 
-    private static HttpHeaders createHeaders(final String userId, final String password) {
-        String auth = userId + ':' + password;
-        byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(StandardCharsets.US_ASCII));
-        String authHeader = "Basic " + new String(encodedAuth);
+    private static HttpHeaders createAuthzHeader(final String apiToken) {
+        String authHeader = "Bearer " + apiToken;
 
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.AUTHORIZATION, authHeader);

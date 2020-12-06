@@ -15,12 +15,10 @@ import java.util.List;
 public class TeamcitySettings {
     private String cron;
     private String token;
-    private List<String> usernames = new ArrayList<>();
     private List<String> apiKeys = new ArrayList<>();
     private List<String> servers = new ArrayList<>();
     private List<String> niceNames = new ArrayList<>();
     private String projectIds = "";
-    private String credentials;
 
     public String getCron() {
         return cron;
@@ -36,14 +34,6 @@ public class TeamcitySettings {
 
     public void setToken(String token) {
         this.token = token;
-    }
-
-    public List<String> getUsernames() {
-        return usernames;
-    }
-
-    public void setUsernames(List<String> usernames) {
-        this.usernames = usernames;
     }
 
     public List<String> getApiKeys() {
@@ -78,11 +68,4 @@ public class TeamcitySettings {
         return Arrays.asList(projectIds.split(","));
     }
 
-    public String getCredentials() {
-        return credentials;
-    }
-
-    public void setCredentials(String credentials) {
-        this.credentials = credentials;
-    }
 }

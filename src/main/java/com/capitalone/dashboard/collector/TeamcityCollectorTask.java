@@ -78,12 +78,10 @@ public class TeamcityCollectorTask extends CollectorTask<TeamcityCollector> {
             config.decryptOrEncrptInfo();
             // TO clear the username and password from existing run and
             // pick the latest
-            teamcitySettings.getUsernames().clear();
             teamcitySettings.getServers().clear();
             teamcitySettings.getApiKeys().clear();
             for (Map<String, String> teamcityServer : config.getInfo()) {
                 teamcitySettings.getServers().add(teamcityServer.get("url"));
-                teamcitySettings.getUsernames().add(teamcityServer.get("userName"));
                 teamcitySettings.getApiKeys().add(teamcityServer.get("password"));
             }
         }
