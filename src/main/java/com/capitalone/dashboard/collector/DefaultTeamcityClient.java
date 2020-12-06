@@ -1,11 +1,9 @@
 package com.capitalone.dashboard.collector;
 
-import com.capitalone.dashboard.misc.HygieiaException;
 import com.capitalone.dashboard.model.Environment;
 import com.capitalone.dashboard.model.TeamcityApplication;
 import com.capitalone.dashboard.model.TeamcityEnvResCompData;
 import com.capitalone.dashboard.util.Supplier;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -22,8 +20,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestOperations;
 
-import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -64,7 +60,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
     private void constructApplication(List<TeamcityApplication> applications, JSONArray buildTypes, String projectID, String instanceUrl) {
         for (Object buildType : buildTypes) {
             JSONObject jsonBuildType = (JSONObject) buildType;
-            final String buildTypeID = getString(jsonBuildType, "id");
+            final String buildTypeID = getId(jsonBuildType);
             try {
                 if (isDeploymentBuildType(buildTypeID, instanceUrl)) {
                     LOGGER.debug("Process projectName " + projectID);
@@ -75,15 +71,13 @@ public class DefaultTeamcityClient implements TeamcityClient {
                     applications.add(application);
                     break;
                 }
-            } catch (URISyntaxException e) {
-                LOGGER.error("wrong syntax url for loading jobs details", e);
             } catch (ParseException e) {
                 LOGGER.error("Parsing jobs details on instance: " + instanceUrl, e);
             }
         }
     }
 
-    private Boolean isDeploymentBuildType(String buildTypeID, String instanceUrl) throws URISyntaxException, ParseException {
+    private Boolean isDeploymentBuildType(String buildTypeID, String instanceUrl) throws ParseException {
         try {
             String buildTypesUrl = joinURL(instanceUrl, new String[]{String.format("%s/id:%s", BUILD_TYPE_DETAILS_URL_SUFFIX, buildTypeID)});
             LOGGER.info("isDeploymentBuildType Fetching build types details for {}", buildTypesUrl);
@@ -141,7 +135,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
             if (subProjects.size() > 0) {
                 for (Object subProject : subProjects) {
                     JSONObject jsonSubProject = (JSONObject) subProject;
-                    final String subProjectID = getString(jsonSubProject, "id");
+                    final String subProjectID = getId(jsonSubProject);
                     recursivelyFindBuildTypes(instanceUrl, subProjectID, buildTypes);
                 }
             }
@@ -162,7 +156,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
     private void constructEnvironment(List<Environment> environments, TeamcityApplication application, JSONArray buildTypes) {
         for (Object buildType : buildTypes) {
             JSONObject jsonBuildType = (JSONObject) buildType;
-            final String buildTypeID = getString(jsonBuildType, "id");
+            final String buildTypeID = getId(jsonBuildType);
             try {
                 if (isDeploymentBuildType(buildTypeID, application.getInstanceUrl())) {
                     String buildTypesUrl = joinURL(application.getInstanceUrl(), new String[]{String.format("%s/id:%s", BUILD_TYPE_DETAILS_URL_SUFFIX, buildTypeID)});
@@ -181,15 +175,13 @@ public class DefaultTeamcityClient implements TeamcityClient {
                     environments.add(new Environment(str(object, "id"), str(
                             object, "name")));
                 }
-            } catch (URISyntaxException e) {
-                LOGGER.error("wrong syntax url for loading jobs details", e);
             } catch (ParseException e) {
                 LOGGER.error("Parsing jobs details on instance: " + application.getInstanceUrl(), e);
             }
         }
     }
 
-    private List<TeamcityEnvResCompData> getBuildDetailsForTeamcityProjectPaginated(TeamcityApplication application, Environment environment, int startCount, int buildsCount) throws URISyntaxException, ParseException {
+    private List<TeamcityEnvResCompData> getBuildDetailsForTeamcityProjectPaginated(TeamcityApplication application, Environment environment, int startCount, int buildsCount) throws ParseException {
         List<TeamcityEnvResCompData> environmentStatuses = new ArrayList<>();
         try {
             String allBuildsUrl = joinURL(application.getInstanceUrl(), new String[]{BUILD_DETAILS_URL_SUFFIX});
@@ -223,7 +215,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 if (!isDeployed(buildJson.get("status").toString())) continue;
                 JSONObject triggeredObject = (JSONObject) buildJson.get("triggered");
                 String dateInString = triggeredObject.get("date").toString();
-                Long time = getTimeInMillis(dateInString);
+                long time = getTimeInMillis(dateInString);
 
                 TeamcityEnvResCompData deployData = new TeamcityEnvResCompData();
 
@@ -273,7 +265,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
             List<TeamcityEnvResCompData> components = null;
             try {
                 components = getBuildDetailsForTeamcityProjectPaginated(application, environment, startCount, buildsCount);
-            } catch (URISyntaxException | ParseException e) {
+            } catch (ParseException e) {
                 e.printStackTrace();
             }
             if (Objects.requireNonNull(components).isEmpty()) {
@@ -310,8 +302,8 @@ public class DefaultTeamcityClient implements TeamcityClient {
         return array == null ? new JSONArray() : (JSONArray) array;
     }
 
-    private String getString(JSONObject json, String key) {
-        return (String) json.get(key);
+    private String getId(JSONObject json) {
+        return (String) json.get("id");
     }
 
     private String str(JSONObject json, String key) {
@@ -319,15 +311,10 @@ public class DefaultTeamcityClient implements TeamcityClient {
         return value == null ? null : value.toString();
     }
 
-    private long date(JSONObject jsonObject, String key) {
-        Object value = jsonObject.get(key);
-        return value == null ? 0 : (long) value;
-    }
-
     // join a base url to another path or paths - this will handle trailing or non-trailing /'s
     public static String joinURL(String base, String[] paths) {
         StringBuilder result = new StringBuilder(base);
-        Arrays.stream(paths).map(path -> path.replaceFirst("^(\\/)+", "")).forEach(p -> {
+        Arrays.stream(paths).map(path -> path.replaceFirst("^(/)+", "")).forEach(p -> {
             if (result.lastIndexOf("/") != result.length() - 1) {
                 result.append('/');
             }

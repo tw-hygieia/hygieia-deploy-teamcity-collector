@@ -1,22 +1,7 @@
 package com.capitalone.dashboard.collector;
 
-import com.capitalone.dashboard.model.CollectorItem;
-import com.capitalone.dashboard.model.CollectorType;
-import com.capitalone.dashboard.model.Configuration;
-import com.capitalone.dashboard.model.Environment;
-import com.capitalone.dashboard.model.EnvironmentComponent;
-import com.capitalone.dashboard.model.EnvironmentStatus;
-import com.capitalone.dashboard.model.TeamcityApplication;
-import com.capitalone.dashboard.model.TeamcityCollector;
-import com.capitalone.dashboard.model.TeamcityEnvResCompData;
-import com.capitalone.dashboard.repository.BaseCollectorRepository;
-import com.capitalone.dashboard.repository.ComponentRepository;
-import com.capitalone.dashboard.repository.ConfigurationRepository;
-import com.capitalone.dashboard.repository.EnvironmentComponentRepository;
-import com.capitalone.dashboard.repository.EnvironmentStatusRepository;
-import com.capitalone.dashboard.repository.TeamcityApplicationRepository;
-import com.capitalone.dashboard.repository.TeamcityCollectorRepository;
-import com.google.common.base.Predicate;
+import com.capitalone.dashboard.model.*;
+import com.capitalone.dashboard.repository.*;
 import com.google.common.collect.Iterables;
 import org.apache.commons.lang3.StringUtils;
 import org.bson.types.ObjectId;
@@ -29,8 +14,8 @@ import org.springframework.util.CollectionUtils;
 
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -164,7 +149,7 @@ public class TeamcityCollectorTask extends CollectorTask<TeamcityCollector> {
 
     }
 
-    private List<EnvironmentComponent> getEnvironmentComponent(List<TeamcityEnvResCompData> dataList, Environment environment, TeamcityApplication application) {
+    private List<EnvironmentComponent> getEnvironmentComponent(List<TeamcityEnvResCompData> dataList, Environment environment) {
         List<EnvironmentComponent> returnList = new ArrayList<>();
         for (TeamcityEnvResCompData data : dataList) {
             EnvironmentComponent component = new EnvironmentComponent();
@@ -216,7 +201,7 @@ public class TeamcityCollectorTask extends CollectorTask<TeamcityCollector> {
                 List<TeamcityEnvResCompData> combinedDataList = teamcityClient
                         .getEnvironmentResourceStatusData(application,
                                 environment);
-                compList.addAll(getEnvironmentComponent(combinedDataList, environment, application));
+                compList.addAll(getEnvironmentComponent(combinedDataList, environment));
                 statusList.addAll(getEnvironmentStatus(combinedDataList));
             }
             if (!compList.isEmpty()) {
@@ -312,17 +297,12 @@ public class TeamcityCollectorTask extends CollectorTask<TeamcityCollector> {
             List<EnvironmentStatus> existingStatuses) {
 
         return Iterables.tryFind(existingStatuses,
-                new Predicate<EnvironmentStatus>() {
-                    @Override
-                    public boolean apply(EnvironmentStatus existing) {
-                        return existing.getEnvironmentName().equals(
-                                proposed.getEnvironmentName())
-                                && existing.getComponentName().equals(
-                                proposed.getComponentName())
-                                && existing.getResourceName().equals(
-                                proposed.getResourceName());
-                    }
-                }).orNull();
+                existing -> existing.getEnvironmentName().equals(
+                        proposed.getEnvironmentName())
+                        && existing.getComponentName().equals(
+                        proposed.getComponentName())
+                        && existing.getResourceName().equals(
+                        proposed.getResourceName())).orNull();
     }
 
     @SuppressWarnings("unused")
@@ -339,16 +319,10 @@ public class TeamcityCollectorTask extends CollectorTask<TeamcityCollector> {
             List<EnvironmentComponent> existingComponents) {
 
         return Iterables.tryFind(existingComponents,
-                new Predicate<EnvironmentComponent>() {
-                    @Override
-                    public boolean apply(EnvironmentComponent existing) {
-                        return existing.getEnvironmentName().equals(
-                                proposed.getEnvironmentName())
-                                && existing.getComponentName().equals(
-                                proposed.getComponentName());
-
-                    }
-                }).orNull();
+                existing -> existing.getEnvironmentName().equals(
+                        proposed.getEnvironmentName())
+                        && existing.getComponentName().equals(
+                        proposed.getComponentName())).orNull();
     }
 }
 
