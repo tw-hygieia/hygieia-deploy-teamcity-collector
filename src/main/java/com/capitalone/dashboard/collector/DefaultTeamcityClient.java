@@ -186,7 +186,8 @@ public class DefaultTeamcityClient implements TeamcityClient {
         try {
             String allBuildsUrl = joinURL(application.getInstanceUrl(), new String[]{BUILD_DETAILS_URL_SUFFIX});
             LOGGER.info("Fetching builds for project {}", allBuildsUrl);
-            String url = joinURL(allBuildsUrl, new String[]{String.format("?locator=buildType:%s,count:%d,start:%d", environment.getId(), buildsCount, startCount)});
+            //TODO This may only return the successful builds. We may want to get failed builds and show them too
+            String url = joinURL(allBuildsUrl, new String[]{String.format("?locator=buildType:%s,count:%d,start:%d,branch:default:any", environment.getId(), buildsCount, startCount)});
             ResponseEntity<String> responseEntity = makeRestCall(url);
             String returnJSON = responseEntity.getBody();
             if (StringUtils.isEmpty(returnJSON)) {
@@ -213,6 +214,14 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 parser = new JSONParser();
                 JSONObject buildJson = (JSONObject) parser.parse(returnJSON);
                 if (!isDeployed(buildJson.get("status").toString())) continue;
+                //Branch check: TODO Externalize the branch names
+                String branchName = buildJson.get("branchName").toString();
+                boolean mustAnalyzeBranch =
+                        branchName.equalsIgnoreCase("master") || branchName.startsWith("release/");
+                if (!mustAnalyzeBranch) {
+                    continue;
+                }
+
                 JSONObject triggeredObject = (JSONObject) buildJson.get("triggered");
                 String dateInString = triggeredObject.get("date").toString();
                 long time = getTimeInMillis(dateInString);
