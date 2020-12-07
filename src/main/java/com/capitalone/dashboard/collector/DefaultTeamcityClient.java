@@ -1,8 +1,7 @@
 package com.capitalone.dashboard.collector;
 
-import com.capitalone.dashboard.model.Environment;
-import com.capitalone.dashboard.model.TeamcityApplication;
-import com.capitalone.dashboard.model.TeamcityEnvResCompData;
+import com.capitalone.dashboard.model.*;
+import com.capitalone.dashboard.repository.CommitRepository;
 import com.capitalone.dashboard.util.Supplier;
 import org.apache.commons.lang3.StringUtils;
 import org.json.simple.JSONArray;
@@ -37,12 +36,16 @@ public class DefaultTeamcityClient implements TeamcityClient {
     private static final String BUILD_DETAILS_URL_SUFFIX = "app/rest/builds";
 
     private static final String BUILD_TYPE_DETAILS_URL_SUFFIX = "app/rest/buildTypes";
+    private CommitRepository commitRepository;
+    private PipelineCommitProcessor pipelineCommitProcessor;
 
     @Autowired
     public DefaultTeamcityClient(TeamcitySettings teamcitySettings,
-                                 Supplier<RestOperations> restOperationsSupplier) {
+                                 Supplier<RestOperations> restOperationsSupplier, CommitRepository commitRepository, PipelineCommitProcessor pipelineCommitProcessor) {
         this.settings = teamcitySettings;
         this.rest = restOperationsSupplier.get();
+        this.commitRepository = commitRepository;
+        this.pipelineCommitProcessor = pipelineCommitProcessor;
     }
 
     @Override
@@ -199,6 +202,7 @@ public class DefaultTeamcityClient implements TeamcityClient {
             if (object.isEmpty()) {
                 return Collections.emptyList();
             }
+            List<PipelineCommit> allPipelineCommits = new ArrayList<>();
             JSONArray jsonBuilds = getJsonArray(object, "build");
             for (Object build : jsonBuilds) {
                 JSONObject jsonBuild = (JSONObject) build;
@@ -238,12 +242,71 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 deployData.setOnline(true);
                 deployData.setResourceName("teamcity-runner");
                 environmentStatuses.add(deployData);
+
+
+                //TODO Do the following only if the deployment is successful
+                PipelineCommit pipelineCommit = getPipelineCommit(buildID, buildJson,
+                        time);
+                if (pipelineCommit == null) {
+                    continue;
+                }
+                if (allPipelineCommits.stream().noneMatch(pc -> pc.getScmRevisionNumber().equalsIgnoreCase(pipelineCommit.getScmRevisionNumber()))) {
+                    allPipelineCommits.add(pipelineCommit);
+                } else {
+                    //If the incoming pipelineCommit has a smaller timestamp, remove the original one and add the incoming one
+                    Optional<PipelineCommit> existingPipelineCommit = allPipelineCommits.stream().filter(pc ->
+                            pc.getScmRevisionNumber().equalsIgnoreCase(pipelineCommit.getScmRevisionNumber()) &&
+                                    pc.getTimestamp() > pipelineCommit.getTimestamp()).findFirst();
+                    if (existingPipelineCommit.isPresent()) {
+                        PipelineCommit existingPc = existingPipelineCommit.get();
+                        LOGGER.info("Replacing timestamp {} with {} for commit {}", existingPc.getTimestamp(),
+                                pipelineCommit.getTimestamp(),
+                                existingPc.getScmRevisionNumber());
+                        allPipelineCommits.remove(existingPc);
+                        allPipelineCommits.add(pipelineCommit);
+                    }
+                }
+                allPipelineCommits.add(pipelineCommit);
+
             }
+            application.setEnvironment(environment.getName());
+            pipelineCommitProcessor.processPipelineCommits(allPipelineCommits,
+                    application);
         } catch (HttpClientErrorException hce) {
             LOGGER.error("http client exception loading build details", hce);
         }
         return environmentStatuses;
 
+    }
+
+
+    private PipelineCommit getPipelineCommit(String buildID, JSONObject deployableObject, long timestamp) {
+
+        JSONObject revisions = (JSONObject) deployableObject.get("revisions");
+
+        Object revision = revisions.get("revision");
+        if (revision == null) {
+            LOGGER.warn("No revision detected for build " + buildID);
+            return null;
+        }
+        JSONArray theRevisions = (JSONArray) revision;
+        if (theRevisions.size() < 1) {
+            LOGGER.warn("No revision detected for build " + buildID);
+            return null;
+        }
+        if (theRevisions.size() > 1) {
+            LOGGER.warn("Multiple revisions detected for build " + buildID + ", considering the first");
+        }
+        String commitId = (String) ((JSONObject)theRevisions.get(0)).get("version");
+        List<Commit> matchedCommits = commitRepository.findByScmRevisionNumber(commitId);
+        Commit newCommit = null;
+        if (matchedCommits != null && matchedCommits.size() > 0) {
+            newCommit = matchedCommits.get(0);
+        }
+        if (newCommit == null) {
+            return null;
+        }
+        return new PipelineCommit(newCommit, timestamp);
     }
 
     private long getTimeInMillis(String startDate) {
