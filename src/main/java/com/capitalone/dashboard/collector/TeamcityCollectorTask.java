@@ -197,7 +197,9 @@ public class TeamcityCollectorTask extends CollectorTask<TeamcityCollector> {
             long startApp = System.currentTimeMillis();
             for (Environment environment : teamcityClient
                     .getEnvironments(application)) {
-                environment.setName(environment.getName().replace(".","_"));
+                //TODO Perform the ignored environment check here
+                String environmentName = getEnvironmentName(environment);
+                environment.setName(environmentName);
                 List<TeamcityEnvResCompData> combinedDataList = teamcityClient
                         .getEnvironmentResourceStatusData(application,
                                 environment);
@@ -219,6 +221,16 @@ public class TeamcityCollectorTask extends CollectorTask<TeamcityCollector> {
 
             log(" " + application.getApplicationName(), startApp);
         }
+    }
+
+    private String getEnvironmentName(Environment environment) {
+        String underscoredName = environment.getName().replace(".", "_");
+        if (underscoredName.contains(" ")) {
+            //Take the last word
+            String[] splitStrings = underscoredName.split(" ");
+            return splitStrings[splitStrings.length - 1];
+        }
+        return underscoredName;
     }
 
     private List<TeamcityApplication> enabledApplications(

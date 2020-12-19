@@ -1,5 +1,6 @@
 package com.capitalone.dashboard.collector;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,10 @@ public class TeamcitySettings {
     private List<String> servers = new ArrayList<>();
     private List<String> niceNames = new ArrayList<>();
     private String projectIds = "";
+    @Value("${teamcity.branchMatcher:.*}")
+    private String branchMatcher;
+    @Value("${teamcity.pipelineIgnoreMatcher:ignore}")
+    private String pipelineIgnoreMatcher;
 
     public String getCron() {
         return cron;
@@ -68,4 +73,19 @@ public class TeamcitySettings {
         return Arrays.asList(projectIds.split(","));
     }
 
+    public String getBranchMatcher() {
+        return branchMatcher;
+    }
+
+    public void setBranchMatcher(String branchMatcher) {
+        this.branchMatcher = branchMatcher;
+    }
+
+    public String getPipelineIgnoreMatcher() {
+        return pipelineIgnoreMatcher;
+    }
+
+    public void setPipelineIgnoreMatcher(String pipelineIgnoreMatcher) {
+        this.pipelineIgnoreMatcher = pipelineIgnoreMatcher;
+    }
 }

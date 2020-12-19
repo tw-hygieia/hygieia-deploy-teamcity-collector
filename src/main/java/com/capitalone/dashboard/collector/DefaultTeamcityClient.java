@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.regex.Pattern;
 
 @Component
 public class DefaultTeamcityClient implements TeamcityClient {
@@ -218,11 +219,16 @@ public class DefaultTeamcityClient implements TeamcityClient {
                 parser = new JSONParser();
                 JSONObject buildJson = (JSONObject) parser.parse(returnJSON);
                 if (!isDeployed(buildJson.get("status").toString())) continue;
-                //Branch check: TODO Externalize the branch names
                 String branchName = buildJson.get("branchName").toString();
+                Pattern branchMatcherRegex = Pattern.compile(settings.getBranchMatcher());
                 boolean mustAnalyzeBranch =
-                        branchName.equalsIgnoreCase("master") || branchName.startsWith("release/");
+                        branchMatcherRegex.matcher(branchName).matches();
                 if (!mustAnalyzeBranch) {
+                    continue;
+                }
+                Pattern pipelineIgnorePattern = Pattern.compile(settings.getPipelineIgnoreMatcher());
+                String pipelineName = (String) ((JSONObject)buildJson.get("buildType")).get("name");
+                if (pipelineIgnorePattern.matcher(pipelineName).matches()) {
                     continue;
                 }
 

@@ -80,6 +80,10 @@ teamcity.servers[0]=${TEAMCITY_SERVER}
 #teamcity.niceNames[0]=[YourTeamcity]
 #teamcity.environments[0]=[DEV,QA,INT,PERF,PROD]
 teamcity.apiKeys[0]=${TEAMCITY_API_KEY}
+
+teamcity.branchMatcher=${TEAMCITY_BRANCH_REGEX:master}
+teamcity.pipelineIgnoreMatcher=${TEAMCITY_PIPELINE_IGNORE_REGEX:ignore}
+
 # Search criteria enabled via properties (max search criteria = 2)
 teamcity.searchFields[0]= options.jobName
 teamcity.searchFields[1]= niceName
